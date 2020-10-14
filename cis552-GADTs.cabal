@@ -1,0 +1,23 @@
+cabal-version:       >=1.10
+name:                cis552-GADTs
+version:             0.1.0.0
+synopsis:            GADT examples
+homepage:            https://www.cis.upenn.edu/~cis552/current/index.html
+license:             OtherLicense
+license-file:        LICENSE
+maintainer:          sweirich@cis.upenn.edu
+build-type:          Simple
+extra-source-files:  CHANGELOG.md
+
+library
+  exposed-modules:     GADTs
+                     , RedBlackGADT0
+  build-depends:       base >=4.13 && <4.14
+                     , HUnit >= 1.6
+                     , QuickCheck == 2.13.2
+  default-language:    Haskell2010
+  default-extensions:  GADTs
+                     , ScopedTypeVariables
+                     , DataKinds
+                     , NoStarIsType
+  ghc-options:       -Wincomplete-patterns -Wno-orphans -Wno-unticked-promoted-constructors
