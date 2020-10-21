@@ -7,29 +7,53 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module RedBlackGADT0 where
+module RedBlackGADT3 where
+
+-- RedBlack trees that use GADTs to enforce
+--    that the Root of the Tree is Black
+--    that Red nodes have Black children
+--    that all paths have the same Black height
 
 import qualified Data.Foldable as Foldable
 import Data.Kind (Type)
 import Test.QuickCheck hiding (elements)
 
 data Color where
-  R :: Color
-  B :: Color
+  Red :: Color
+  Black :: Color
 
-data T (a :: Type) where
-  E :: T a
-  N :: Color -> T a -> a -> T a -> T a
+data SColor (c::Color) where
+  R :: SColor Red
+  B :: SColor Black
 
-newtype RBT a = Root (T a)
+data Nat = O | S Nat
+
+type family Incr (c :: Color) (n :: Nat) :: Nat where
+  Incr Black n = S n
+  Incr Red n = n
+
+data T (n :: Nat) (c::Color) (a :: Type) where
+  E :: T O Black a
+  N :: Valid c c1 c2 => SColor c -> T n c1 a -> a -> T n c2 a -> T (Incr c n) c a
+
+class Valid (c::Color) (c1 :: Color) (c2 :: Color)
+instance Valid Red Black Black
+instance Valid Black c1 c2
+
+data RBT a where
+   Root :: T n Black a -> RBT a
 
 -- Show instances
 
 instance Show Color where
-  show R = "R"
-  show B = "B"
+  show Red = "R"
+  show Black = "B"
 
-instance Show a => Show (T a) where
+instance Show (SColor c) where
+  show R = "R"
+  show B = "B"  
+
+instance Show a => Show (T n c a) where
   showsPrec _d E = showString "E"
   showsPrec d (N c l x r) =
     showParen (d > node_prec) $
@@ -48,12 +72,18 @@ instance Show a => Show (RBT a) where
 
 -- Eq instances
 instance Eq Color where
-  R == R = True
-  B == B = True
+  Red == Red = True
+  Black == Black = True
   _ == _ = False
 
+(%==) :: SColor c1 -> SColor c2 -> Bool
+R %== R = True
+B %== B = True
+_ %== _ = False
+
+
 -- Foldable instance
-instance Foldable T where
+instance Foldable (T n c) where
   foldMap _f E = mempty
   foldMap f (N _ l x r) = foldMap f l <> f x <> foldMap f r
 
@@ -68,31 +98,29 @@ instance Eq a => Eq (RBT a) where
   t1 == t2 = elements t1 == elements t2
 
 -- | access the color of the tree
-color :: T a -> Color
+color :: T n c a -> SColor c
 color (N c _ _ _) = c
 color E = B
 
 -- | calculate the black height of the tree
-blackHeight :: T a -> Int
+blackHeight :: T n c a -> Int
 blackHeight E = 1
-blackHeight (N c a _ _) = blackHeight a + (if c == B then 1 else 0)
+blackHeight (N c a _ _) = blackHeight a + (if c %== B then 1 else 0)
 
 good1 :: RBT Int
 good1 = Root $ N B (N B E 1 E) 2 (N B E 3 E)
 
--- root is not black
-bad1 :: RBT Int
-bad1 = Root $ N R (N B E 1 E) 2 (N B E 3 E)
+-- Red root
+-- bad1 :: RBT Int
+-- bad1 = Root $ N R (N B E 1 E) 2 (N B E 3 E)
 
 -- invalid black height
-bad2 :: RBT Int
-bad2 = Root $ N B (N R E 1 E) 2 (N B E 3 E)
+--bad2 :: RBT Int
+-- bad2 = Root $ N B (N R E 1 E) 2 (N B E 3 E)
 
--- red node with black children
-bad3 :: RBT Int
-bad3 = Root $ N B (N R (N R E 1 E) 2 (N R E 3 E)) 4 E
+-- bad3  :: RBT Int
+-- bad3  = Root (N B (N R (N R E 1 E) 2 (N R E 3 E)) 4 E)
 
--- not a BST
 bad4 :: RBT Int
 bad4 = Root $ N B (N B E 1 E) 3 (N B E 2 E)
 
@@ -113,18 +141,20 @@ orderedBy op (x : y : xs) = x `op` y && orderedBy op (y : xs)
 orderedBy _ _ = True
 
 isRootBlack :: RBT a -> Bool
-isRootBlack (Root t) = color t == B
+isRootBlack (Root t) = color t %== B
 
 consistentBlackHeight :: RBT a -> Bool
 consistentBlackHeight (Root t) = aux t
   where
+    aux :: T n c a -> Bool
     aux (N _ a _ b) = blackHeight a == blackHeight b && aux a && aux b
     aux E = True
 
 noRedRed :: RBT a -> Bool
 noRedRed (Root t) = aux t
   where
-    aux (N R a _ b) = color a == B && color b == B && aux a && aux b
+    aux :: T n c a -> Bool
+    aux (N R a _ b) = color a %== B && color b %== B && aux a && aux b
     aux (N B a _ b) = aux a && aux b
     aux E = True
 
@@ -158,9 +188,12 @@ instance (Ord a, Arbitrary a) => Arbitrary (RBT a) where
   shrink (Root E) = []
   shrink (Root (N _ l _ r)) = [blacken l, blacken r]
 
-blacken :: T a -> RBT a
+blacken :: T n c a -> RBT a
 blacken E = Root E
 blacken (N _ l v r) = Root (N B l v r)
+
+blackenH :: HT n a -> RBT a
+blackenH (HN _ l v r) = Root (N B l v r)
 
 empty :: RBT a
 empty = Root E
@@ -168,7 +201,7 @@ empty = Root E
 member :: Ord a => a -> RBT a -> Bool
 member x0 (Root t) = aux x0 t
   where
-    aux :: Ord a => a -> T a -> Bool
+    aux :: Ord a => a -> T n c a -> Bool
     aux x E = False
     aux x (N _ a y b)
       | x < y = aux x a
@@ -176,17 +209,23 @@ member x0 (Root t) = aux x0 t
       | otherwise = True
 
 insert :: Ord a => a -> RBT a -> RBT a
-insert x (Root t) = blacken (ins x t)
+insert x (Root t) = blackenH (ins x t)
 
-ins :: Ord a => a -> T a -> T a
-ins x E = N R E x E
+-- Hide the tree color
+-- Know insert won't give us an empty tree
+data HT n a where
+  HN :: SColor c1 -> T n c2 a -> a -> T n c3 a -> HT (Incr c1 n) a
+
+ins :: Ord a => a -> T n c a -> HT n a
+ins x E = HN R E x E
 ins x s@(N c a y b)
   | x < y = balanceL c (ins x a) y b
   | x > y = balanceR c a y (ins x b)
-  | otherwise = s
+  | otherwise = HN c a y b
 
 -- Original version of balance
 {-
+balance :: Color -> T a -> a -> T a -> T a
 balance (N B (N R (N R a x b) y c) z d) = N R (N B a x b) y (N B c z d)
 balance (N B (N R a x (N R b y c)) z d) = N R (N B a x b) y (N B c z d)
 
@@ -195,15 +234,26 @@ balance (N B a x (N R b y (N R c z d))) = N R (N B a x b) y (N B c z d)
 balance t = t
 -}
 
-balanceL :: Color -> T a -> a -> T a -> T a
-balanceL B (N R (N R a x b) y c) z d = N R (N B a x b) y (N B c z d)
-balanceL B (N R a x (N R b y c)) z d = N R (N B a x b) y (N B c z d)
-balanceL col a x b = N col a x b
+balanceL :: SColor c -> HT n a -> a -> T n c2 a -> HT (Incr c n) a
+balanceL B (HN R (N R a x b) y c) z d = HN R (N B a x b) y (N B c z d)
+balanceL B (HN R a x (N R b y c)) z d = HN R (N B a x b) y (N B c z d)
+balanceL c (HN B a x b) z d = HN c (N B a x b) z d
+balanceL c (HN R a@E x b@E) z d = HN c (N R a x b) z d
+balanceL c (HN R a@(N B _ _ _) x b@(N B _ _ _)) z d =
+  HN c (N R a x b) z d
+balanceL c (HN R a x b) z d = error ("no case for " ++ show (color a) ++ " " ++ show (color b))
 
-balanceR :: Color -> T a -> a -> T a -> T a
-balanceR B a x (N R (N R b y c) z d) = N R (N B a x b) y (N B c z d)
-balanceR B a x (N R b y (N R c z d)) = N R (N B a x b) y (N B c z d)
-balanceR col a x b = N col a x b
+-- balanceL col a@(HN ac aa ax ab) x b = HN col (N ac aa ax ab) x b
+
+balanceR :: SColor c -> T n c1 a -> a -> HT n a -> HT (Incr c n) a
+balanceR B a x (HN R (N R b y c) z d) = HN R (N B a x b) y (N B c z d)
+balanceR B a x (HN R b y (N R c z d)) = HN R (N B a x b) y (N B c z d)
+balanceR c a x (HN B b y d) = HN c a x (N B b y d)
+balanceR c a x (HN R b@E y d@E) = HN c a x (N R b y d)
+balanceR c a x (HN R b@(N B _ _ _) y d@(N B _ _ _)) =
+  HN c a x (N R b y d)
+balanceR c a x (HN R b y d) = error ("no case for " ++ show (color b) ++ " " ++ show (color d))
+--balanceR col a x b@(HN bc ba bx bb) = HN col a x (N bc ba bx bb)
 
 prop_ShrinkValid :: RBT A -> Property
 prop_ShrinkValid t = conjoin (map prop_Valid (shrink t))
