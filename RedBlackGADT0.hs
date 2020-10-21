@@ -7,7 +7,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module RedBlackGADT where
+module RedBlackGADT0 where
 
 import qualified Data.Foldable as Foldable
 import Data.Kind (Type)
