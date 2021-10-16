@@ -82,7 +82,9 @@ oevaluate (OIsZero e1) =
     Just (Left x) -> if x == 0 then Just (Right True) else Just (Right False)
     _ -> Nothing
 oevaluate (OIf e1 e2 e3) =
-  undefined
+  case oevaluate e1 of
+    Just (Right b1) -> if b1 then oevaluate e2 else oevaluate e3
+    _ -> Nothing
 
 {-
 Ugh. That Maybe/Either combination is awkward.
@@ -171,9 +173,9 @@ evaluate (GInt i) = i
 evaluate (GBool b) = b
 evaluate (GAdd e1 e2) = evaluate e1 + evaluate e2
 evaluate (GIsZero e1) =
-  undefined
+  evaluate e1 == 0
 evaluate (GIf e1 e2 e3) =
-  undefined
+  if evaluate e1 then evaluate e2 else evaluate e3
 
 {-
 Not only that, our evaluator is more efficient [1] because it does not need to
@@ -291,7 +293,11 @@ example, `foldr` works for both empty and nonempty lists.
 -}
 
 foldr' :: (a -> b -> b) -> b -> List f a -> b
-foldr' = undefined
+foldr' f base (Cons x xs) = foldr' f (f x base) xs
+foldr' f base Nil = base
+
+-- >>> foldr' (*) 2 ex1
+-- 12
 
 {-
 But the `foldr1` variant (which assumes that the list is nonempty and
