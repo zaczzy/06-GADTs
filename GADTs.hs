@@ -30,6 +30,7 @@ include ticks. (See below.) I find that annoying so I turn it off.
 module GADTs where
 
 import Data.Kind (Type)
+import Foreign.Marshal (fillBytes)
 import Test.HUnit
 
 {-
@@ -293,7 +294,7 @@ example, `foldr` works for both empty and nonempty lists.
 -}
 
 foldr' :: (a -> b -> b) -> b -> List f a -> b
-foldr' f base (Cons x xs) = foldr' f (f x base) xs
+foldr' f base (Cons x xs) = f x (foldr' f base xs)
 foldr' f base Nil = base
 
 -- >>> foldr' (*) 2 ex1
@@ -306,7 +307,15 @@ nonempty.
 -}
 
 foldr1' :: (a -> a -> a) -> List NonEmpty a -> a
-foldr1' = undefined
+foldr1' f (Cons x xs) = case xs of
+  Nil -> x
+  ys@(Cons _ _) -> f x (foldr1' f ys) -- FIXME: this is not the best way for sure.
+
+ex2 :: List 'NonEmpty Int
+ex2 = Cons 5 (Cons 2 (Cons 4 Nil))
+
+-- >>> foldr1' (*) ex2
+-- 40
 
 {-
 The type of `map` becomes stronger in an interesting way: It says that
@@ -317,7 +326,8 @@ type check. (Though, sadly, it would still type check if we had two
 -}
 
 map' :: (a -> b) -> List f a -> List f b
-map' = undefined
+map' f Nil = Nil
+map' f (Cons x xs) = Cons (f x) (map' f xs) -- TODO: what does the 'sadly' part mean?
 
 {-
 For `filter`, we don't know whether the output list will be empty or
@@ -325,7 +335,9 @@ nonempty.  (Even if the input list is nonempty, the boolean test might
 fail for all elements.)  So this type doesn't work:
 -}
 
--- filter' :: (a -> Bool) -> List f a -> List f a
+-- filter'' :: (a -> Bool) -> List f a -> List f a
+-- filter'' f Nil = Nil
+-- filter'' f (Cons x xs) = if f x then xs else Cons x xs
 
 {-
 (Try to implement the filter function and see where you get stuck!)
@@ -352,7 +364,8 @@ use pattern matching.  For example:
 -}
 
 isNonempty :: OldList a -> Maybe (List NonEmpty a)
-isNonempty = undefined
+isNonempty (OL (Cons x xs)) = Just (Cons x xs)
+isNonempty (OL Nil) = Nothing
 
 {-
 Now we can use `OldList` as the result of `filter'`, with a bit of
@@ -360,7 +373,8 @@ additional pattern matching.
 -}
 
 filter' :: (a -> Bool) -> List f a -> OldList a
-filter' = undefined
+filter' f Nil = OL Nil
+filter' f (Cons x xs) = if f x then OL (Cons x xs) else OL xs
 
 {-
 Although these examples are simple, GADTs and DataKinds can also work in much
@@ -373,6 +387,7 @@ Lecture notes
 post](https://blog.janestreet.com/why-gadts-matter-for-performance/) about how
 Jane Street uses them to optimize their code.
 
+TODO: understand this point
 [2] When data constructors are used in types, we often add a `'` in front of
 them. This mark tells GHC that it should be looking for a data constructor
 (like `True`) instead of a type constructor (like `Bool`). GHC won't complain
